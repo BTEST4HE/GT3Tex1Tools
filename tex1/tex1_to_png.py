@@ -1,6 +1,14 @@
 import struct
 from PIL import Image
-from .helper import makeOutputDir
+from others.helper import makeOutputDir
+import others.options
+
+
+def calculateAlphaChannelForPNG(input_a):
+    output_a = input_a * 2
+    if output_a >= 0x100:
+        output_a = 0xff
+    return output_a
 
 
 def makePaletteSorted(plt_data):
@@ -13,7 +21,7 @@ def makePaletteSorted(plt_data):
                 r = struct.pack('>B', plt_data[ptr])
                 g = struct.pack('>B', plt_data[ptr + 1])
                 b = struct.pack('>B', plt_data[ptr + 2])
-                a = b'\xff'
+                a = struct.pack('>B', calculateAlphaChannelForPNG(plt_data[ptr + 3]))
                 plt = r + g + b + a
                 pl[i].append(plt)
                 ptr += 4
@@ -31,7 +39,7 @@ def makePalette(plt_data):
         r = struct.pack('>B', plt_data[ptr])
         g = struct.pack('>B', plt_data[ptr + 1])
         b = struct.pack('>B', plt_data[ptr + 2])
-        a = b'\xff'
+        a = struct.pack('>B', calculateAlphaChannelForPNG(plt_data[ptr + 3]))
         plt = r + g + b + a
         plt_list.append(plt)
         ptr += 4
@@ -44,7 +52,7 @@ def tex1_to_png(p_input, p_output):
     if tex1_data[0:4] != b'Tex1':
         raise ValueError('Not Tex1 file.')
 
-    #
+    # Get data from the header
     h_file_size = struct.unpack('I', tex1_data[0xC:0x10])[0]
     h_c2_count = struct.unpack('H', tex1_data[0x16:0x18])[0]
     h_c2_ofs = struct.unpack('I', tex1_data[0x1C:0x20])[0]
@@ -57,6 +65,7 @@ def tex1_to_png(p_input, p_output):
     if h_c2_count > 3:
         raise ValueError('Unsupported Tex1 files:Three or more chunk2 exist')
 
+    # Get data from chunk2
     c2_data_ofs = struct.unpack('I', tex1_data[h_c2_ofs:h_c2_ofs + 0x4])[0]
     c2_data_type = struct.unpack('B', tex1_data[h_c2_ofs + 0x7:h_c2_ofs + 0x8])[0]
     c2_data_width = struct.unpack('H', tex1_data[h_c2_ofs + 0x8:h_c2_ofs + 0xa])[0]
@@ -99,7 +108,7 @@ def tex1_to_png(p_input, p_output):
                 r = plt_list[i][0]
                 g = plt_list[i][1]
                 b = plt_list[i][2]
-                a = 0xff
+                a = calculateAlphaChannelForPNG(plt_list[i][3])
                 im_new.putpixel((x, y), (r, g, b, a))
                 ptr += 1
 
@@ -124,7 +133,7 @@ def tex1_to_png(p_input, p_output):
                     r = tex1_image_data[ptr]
                     g = tex1_image_data[ptr + 1]
                     b = tex1_image_data[ptr + 2]
-                    a = 0xff
+                    a = calculateAlphaChannelForPNG(tex1_image_data[ptr + 3])
                     im_new.putpixel((x, y), (r, g, b, a))
                     ptr += 4
         else:
@@ -132,10 +141,13 @@ def tex1_to_png(p_input, p_output):
     im_new.save(p_output)
 
 
-def makePngFromTex1(p_input, p_output_dir):
+def makePngFromTex1(p_input, p_output_dir, p_relative, conversion_options):
     print(str(p_input) + '\t', end='')
-    png_filename = p_input.stem[:-4] if p_input.stem[-4:] == '.png' else p_input.stem
-    p_output = makeOutputDir(p_input, p_output_dir) / (png_filename + '.png')
+    if conversion_options.is_delimiter_conversion and p_relative is not None:
+        png_filename = others.options.delimiterConversion(p_relative.with_suffix('.png'))
+    else:
+        png_filename = p_input.with_suffix('.png').name
+    p_output = makeOutputDir(p_input, p_output_dir) / png_filename
     try:
         tex1_to_png(p_input, p_output)
         print('Success')
@@ -143,12 +155,15 @@ def makePngFromTex1(p_input, p_output_dir):
         print('Failure:', e.args)
 
 
-def makePngFromTex1Recursive(p_input, p_output_dir):
+def makePngFromTex1Recursive(p_input, p_output_dir, conversion_options):
     p_output_dir = makeOutputDir(p_input, p_output_dir)
     input_path_list = [p for p in p_input.rglob('*.img') if p.is_file()]
     for p in input_path_list:
         p_r = p.relative_to(p_input)
-        p_o = p_output_dir / p_r.parents[0]
-        if p_o.exists() is False:
-            p_o.mkdir(parents=True, exist_ok=True)
-        makePngFromTex1(p, p_o)
+        if conversion_options.is_delimiter_conversion:
+            p_o = p_output_dir
+        else:
+            p_o = p_output_dir / p_r.parents[0]
+            if p_o.exists() is False:
+                p_o.mkdir(parents=True, exist_ok=True)
+        makePngFromTex1(p, p_o, p_r, conversion_options)

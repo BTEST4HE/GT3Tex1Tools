@@ -1,10 +1,11 @@
 import gzip
 import io
 import struct
-from .helper import makeOutputDir
+from others.helper import makeOutputDir
+import others.options
 
 
-def extractTex1FromPMB(p_input, p_output_dir):
+def extractTex1FromPMB(p_input, p_output_dir, img_first_filename, conversion_options):
     # Reading pmb file
     pmb_data = p_input.read_bytes()
 
@@ -15,7 +16,7 @@ def extractTex1FromPMB(p_input, p_output_dir):
     tex1_offset_list = []
 
     # Create directory
-    if tex1_count != 0:
+    if tex1_count != 0 and conversion_options.is_delimiter_conversion is False:
         p_output_dir = makeOutputDir(p_input, p_output_dir) / p_input.name
         if p_output_dir.is_dir() is False:
             p_output_dir.mkdir()
@@ -51,11 +52,11 @@ def extractTex1FromPMB(p_input, p_output_dir):
         else:
             raise ValueError('Incorrect Tex1 data exists. Count:{}'.format(i))
 
-        p_output = makeOutputDir(p_input, p_output_dir) / ('{:0>4}.img'.format(i))
+        p_output = makeOutputDir(p_input, p_output_dir) / ('{0}{1:0>4}.img'.format(img_first_filename, i))
         p_output.write_bytes(tex1_output)
 
 
-def extractTex1FromOther(p_input, p_output_dir):
+def extractTex1FromOther(p_input, p_output_dir, img_first_filename, conversion_options):
     # Reading Files
     if p_input.suffix == '.gz':
         with io.BytesIO(gzip.decompress(p_input.read_bytes())) as gzip_file:
@@ -68,7 +69,7 @@ def extractTex1FromOther(p_input, p_output_dir):
     i = 0
 
     # Create directory
-    if idx != -1:
+    if idx != -1 and conversion_options.is_delimiter_conversion is False:
         p_output_dir = makeOutputDir(p_input, p_output_dir) / p_input.name
         if p_output_dir.is_dir() is False:
             p_output_dir.mkdir()
@@ -76,33 +77,43 @@ def extractTex1FromOther(p_input, p_output_dir):
     # Extract Tex1 file
     while idx != -1:
         file_size = struct.unpack('I', temp[idx + 0xC:idx + 0x10])[0]
+        # Check file size
+        if file_size == 0:
+            raise ValueError('The file size of Tex1 is zero.')
         tex1 = temp[idx:idx + file_size]
-        p_output = makeOutputDir(p_input, p_output_dir) / ('{:0>4}.img'.format(i))
+        p_output = makeOutputDir(p_input, p_output_dir) / ('{0}{1:0>4}.img'.format(img_first_filename, i))
         p_output.write_bytes(tex1)
         temp = temp[idx + file_size:]
         idx = temp.find(b'Tex1\x00\x00\x00\x00')
         i += 1
 
 
-def extractTex1(p_input, p_output_dir):
+def extractTex1(p_input, p_output_dir, p_relative, conversion_options):
     print(str(p_input) + '\t', end='')
+    if conversion_options.is_delimiter_conversion and p_relative is not None:
+        img_first_filename = others.options.delimiterConversion(p_relative) + '_'
+    else:
+        img_first_filename = ''
     try:
         if p_input.suffix == '.pmb':
-            extractTex1FromPMB(p_input, p_output_dir)
+            extractTex1FromPMB(p_input, p_output_dir, img_first_filename, conversion_options)
         else:
-            extractTex1FromOther(p_input, p_output_dir)
+            extractTex1FromOther(p_input, p_output_dir, img_first_filename, conversion_options)
         print('Success')
     except Exception as e:
         print('Failure:', e.args)
 
 
-def extractTex1Recursive(p_input, p_output_dir):
+def extractTex1Recursive(p_input, p_output_dir, conversion_options):
     p_output_dir = makeOutputDir(p_input, p_output_dir)
     input_path_list = [p for p in p_input.glob('**/*') if p.is_file()]
     for p in input_path_list:
         p_r = p.relative_to(p_input)
-        p_o = p_output_dir / p_r.parents[0]
-        if p_o.exists() is False:
-            p_o.mkdir(parents=True, exist_ok=True)
-        extractTex1(p, p_o)
+        if conversion_options.is_delimiter_conversion:
+            p_o = p_output_dir
+        else:
+            p_o = p_output_dir / p_r.parents[0]
+            if p_o.exists() is False:
+                p_o.mkdir(parents=True, exist_ok=True)
+        extractTex1(p, p_o, p_r, conversion_options)
 

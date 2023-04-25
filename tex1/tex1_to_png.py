@@ -4,6 +4,9 @@ from others.helper import makeOutputDir
 import others.options
 
 
+# Calculate alpha channel values of img to those of png FIX:The calculation method of the alpha channel value was set
+# FIX:The calculation method of the alpha channel value was set appropriately,
+#   so there may be a bug where the alpha channel value is shifted when reconverting.
 def calculateAlphaChannelForPNG(input_a):
     output_a = input_a * 2
     if output_a >= 0x100:
@@ -108,7 +111,7 @@ def tex1_to_png(p_input, p_output):
                 r = plt_list[i][0]
                 g = plt_list[i][1]
                 b = plt_list[i][2]
-                a = calculateAlphaChannelForPNG(plt_list[i][3])
+                a = plt_list[i][3]
                 im_new.putpixel((x, y), (r, g, b, a))
                 ptr += 1
 
